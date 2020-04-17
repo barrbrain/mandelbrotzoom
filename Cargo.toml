@@ -1,0 +1,11 @@
+[package]
+name = "mandelbrotzoom"
+version = "0.1.0"
+authors = ["David Michael Barr <b@rr-dav.id.au>"]
+edition = "2018"
+license = "BSD-2-Clause"
+
+[dependencies.image]
+version = "0.23"
+default-features = false
+features = ["png"]
