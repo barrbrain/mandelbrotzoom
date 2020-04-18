@@ -76,7 +76,7 @@ impl RotateZoom {
         Self {
             origin: Vector {
                 x: -(1 << (Q + 1)),
-                y: -(1 << Q),
+                y: -(height << Q) / width,
             },
             col_step: Vector {
                 x: (1 << (Q + 1)) / width,
@@ -84,7 +84,7 @@ impl RotateZoom {
             },
             row_step: Vector {
                 x: 0,
-                y: (1 << (Q + 1)) / height,
+                y: (1 << (Q + 1)) / width,
             },
         }
     }
