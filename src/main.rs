@@ -3,6 +3,7 @@
 // This source code is subject to the terms of the BSD 2 Clause License.
 
 const Q: i32 = 14;
+const P: i32 = 8;
 
 fn mandelbrot_pixel(r: i32, i: i32) -> u8 {
     let mut z_r = 0i32;
@@ -44,6 +45,7 @@ impl std::ops::Mul<Vector> for Vector {
     }
 }
 
+#[derive(Copy, Clone)]
 struct RotateZoom {
     origin: Vector,
     col_step: Vector,
@@ -64,8 +66,8 @@ impl std::ops::Mul<Vector> for RotateZoom {
 fn fill_slice(p: &mut [u8], stride: usize, rz: RotateZoom) {
     for (y, row) in p.chunks_mut(stride).enumerate() {
         for (x, v) in row.iter_mut().enumerate() {
-            let r = x as i32 * rz.col_step.x + y as i32 * rz.row_step.x + rz.origin.x;
-            let i = x as i32 * rz.col_step.y + y as i32 * rz.row_step.y + rz.origin.y;
+            let r = ((x as i32 * rz.col_step.x + y as i32 * rz.row_step.x) >> P) + rz.origin.x;
+            let i = ((x as i32 * rz.col_step.y + y as i32 * rz.row_step.y) >> P) + rz.origin.y;
             *v = mandelbrot_pixel(r, i);
         }
     }
@@ -79,12 +81,12 @@ impl RotateZoom {
                 y: -(height << Q) / width,
             },
             col_step: Vector {
-                x: (1 << (Q + 1)) / width,
+                x: (1 << (P + Q + 1)) / width,
                 y: 0,
             },
             row_step: Vector {
                 x: 0,
-                y: (1 << (Q + 1)) / width,
+                y: (1 << (P + Q + 1)) / width,
             },
         }
     }
@@ -94,15 +96,20 @@ fn main() {
     const WIDTH: usize = 1920;
     const HEIGHT: usize = 1080;
     let mut buf = [0; WIDTH * HEIGHT];
+    let mut u = Vector { x: 1 << Q, y: 0 };
     let v = Vector {
         x: 254 << (Q - 8),
         y: 3 << (Q - 8),
     };
-    let rz = RotateZoom::new(WIDTH as i32, HEIGHT as i32) * v;
-    fill_slice(&mut buf, WIDTH, rz);
-    image::GrayImage::from_fn(WIDTH as u32, HEIGHT as u32, |x, y| {
-        image::Luma([buf[(y * (WIDTH as u32) + x) as usize]])
-    })
-    .save("mandelbrot.png")
-    .unwrap();
+    let rz = RotateZoom::new(WIDTH as i32, HEIGHT as i32);
+    for frame in 0..600 {
+        fill_slice(&mut buf, WIDTH, rz * u);
+        u = u * v;
+        image::GrayImage::from_fn(WIDTH as u32, HEIGHT as u32, |x, y| {
+            image::Luma([buf[(y * (WIDTH as u32) + x) as usize]])
+        })
+        .save(format!("mandelbrot-{:03}.png", frame))
+        .unwrap();
+        println!("Frame {}", frame);
+    }
 }
