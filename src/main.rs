@@ -9,7 +9,7 @@ fn mandelbrot_pixel(r: i32, i: i32) -> u8 {
     let mut z_i = 0i32;
     let mut z_rr = z_r * z_r;
     let mut z_ii = z_i * z_i;
-    for p in 0..255 {
+    for p in (1..=255).rev() {
         let z2_r = (z_rr - z_ii) >> Q;
         let z2_i = (z_r * z_i) >> (Q - 1);
         z_r = z2_r + r;
@@ -20,7 +20,7 @@ fn mandelbrot_pixel(r: i32, i: i32) -> u8 {
             return p;
         }
     }
-    255
+    0
 }
 
 fn fill_slice(p: &mut [u8], stride: usize) {
