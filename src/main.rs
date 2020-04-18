@@ -23,15 +23,42 @@ fn mandelbrot_pixel(r: i32, i: i32) -> u8 {
     0
 }
 
+#[derive(Copy, Clone)]
 struct Vector {
     x: i32,
     y: i32,
+}
+
+impl std::ops::Mul<Vector> for Vector {
+    type Output = Self;
+    fn mul(self, rhs: Self) -> Self {
+        let ac = self.x.saturating_mul(rhs.x);
+        let bd = self.y.saturating_mul(rhs.y);
+        let a_b = self.x.saturating_add(self.y);
+        let c_d = rhs.x.saturating_add(rhs.y);
+        let abcd = a_b.saturating_mul(c_d);
+        Self {
+            x: ac.saturating_sub(bd) >> Q,
+            y: abcd.saturating_sub(ac).saturating_sub(bd) >> Q,
+        }
+    }
 }
 
 struct RotateZoom {
     origin: Vector,
     col_step: Vector,
     row_step: Vector,
+}
+
+impl std::ops::Mul<Vector> for RotateZoom {
+    type Output = Self;
+    fn mul(self, rhs: Vector) -> Self {
+        Self {
+            origin: self.origin * rhs,
+            col_step: self.col_step * rhs,
+            row_step: self.row_step * rhs,
+        }
+    }
 }
 
 fn fill_slice(p: &mut [u8], stride: usize, rz: RotateZoom) {
@@ -67,7 +94,11 @@ fn main() {
     const WIDTH: usize = 1920;
     const HEIGHT: usize = 1080;
     let mut buf = [0; WIDTH * HEIGHT];
-    let rz = RotateZoom::new(WIDTH as i32, HEIGHT as i32);
+    let v = Vector {
+        x: 254 << (Q - 8),
+        y: 3 << (Q - 8),
+    };
+    let rz = RotateZoom::new(WIDTH as i32, HEIGHT as i32) * v;
     fill_slice(&mut buf, WIDTH, rz);
     image::GrayImage::from_fn(WIDTH as u32, HEIGHT as u32, |x, y| {
         image::Luma([buf[(y * (WIDTH as u32) + x) as usize]])
