@@ -23,14 +23,42 @@ fn mandelbrot_pixel(r: i32, i: i32) -> u8 {
     0
 }
 
-fn fill_slice(p: &mut [u8], stride: usize) {
-    let y_step = (stride << (Q + 1)) / p.len();
-    let x_step = (1 << (Q + 1)) / stride;
+struct Vector {
+    x: i32,
+    y: i32,
+}
+
+struct RotateZoom {
+    origin: Vector,
+    col_step: Vector,
+    row_step: Vector,
+}
+
+fn fill_slice(p: &mut [u8], stride: usize, rz: RotateZoom) {
     for (y, row) in p.chunks_mut(stride).enumerate() {
         for (x, v) in row.iter_mut().enumerate() {
-            let r = (x * x_step) as i32 - (1 << (Q + 1));
-            let i = (y * y_step) as i32 - (1 << Q);
+            let r = x as i32 * rz.col_step.x + y as i32 * rz.row_step.x + rz.origin.x;
+            let i = x as i32 * rz.col_step.y + y as i32 * rz.row_step.y + rz.origin.y;
             *v = mandelbrot_pixel(r, i);
+        }
+    }
+}
+
+impl RotateZoom {
+    fn new(width: i32, height: i32) -> Self {
+        Self {
+            origin: Vector {
+                x: -(1 << (Q + 1)),
+                y: -(1 << Q),
+            },
+            col_step: Vector {
+                x: (1 << (Q + 1)) / width,
+                y: 0,
+            },
+            row_step: Vector {
+                x: 0,
+                y: (1 << (Q + 1)) / height,
+            },
         }
     }
 }
@@ -39,7 +67,8 @@ fn main() {
     const WIDTH: usize = 1920;
     const HEIGHT: usize = 1080;
     let mut buf = [0; WIDTH * HEIGHT];
-    fill_slice(&mut buf, WIDTH);
+    let rz = RotateZoom::new(WIDTH as i32, HEIGHT as i32);
+    fill_slice(&mut buf, WIDTH, rz);
     image::GrayImage::from_fn(WIDTH as u32, HEIGHT as u32, |x, y| {
         image::Luma([buf[(y * (WIDTH as u32) + x) as usize]])
     })
