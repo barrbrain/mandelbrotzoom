@@ -10,7 +10,8 @@ fn mandelbrot_pixel(r: i32, i: i32) -> u8 {
     let mut z_i = 0i32;
     let mut z_rr = z_r * z_r;
     let mut z_ii = z_i * z_i;
-    for p in (1..=255).rev() {
+    let low_bits = mix(r, i) & 1;
+    for p in (2..=254).rev().step_by(2) {
         let z2_r = (z_rr - z_ii) >> Q;
         let z2_i = (z_r * z_i) >> (Q - 1);
         z_r = z2_r + r;
@@ -24,9 +25,14 @@ fn mandelbrot_pixel(r: i32, i: i32) -> u8 {
                 }
             }
         }
-        return p;
+        return p | low_bits;
     }
-    0
+    low_bits
+}
+
+fn mix(x: i32, y: i32) -> u8 {
+    let h = x ^ (y >> 4) ^ (y << 4);
+    (h ^ (h >> 7) ^ (h >> 4)) as u8
 }
 
 #[derive(Copy, Clone)]
