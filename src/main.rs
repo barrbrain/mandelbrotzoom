@@ -15,11 +15,16 @@ fn mandelbrot_pixel(r: i32, i: i32) -> u8 {
         let z2_i = (z_r * z_i) >> (Q - 1);
         z_r = z2_r + r;
         z_i = z2_i + i;
-        z_rr = z_r.saturating_mul(z_r);
-        z_ii = z_i.saturating_mul(z_i);
-        if z_rr.saturating_add(z_ii) >= (1 << (2 * Q + 2)) {
-            return p;
+        if let (Some(rr), Some(ii)) = (z_r.checked_mul(z_r), z_i.checked_mul(z_i)) {
+            if let Some(norm) = rr.checked_add(ii) {
+                if norm < (1 << (2 * Q + 2)) {
+                    z_rr = rr;
+                    z_ii = ii;
+                    continue;
+                }
+            }
         }
+        return p;
     }
     0
 }
