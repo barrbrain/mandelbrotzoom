@@ -108,12 +108,9 @@ fn main() {
     const HEIGHT: usize = 1080;
     let mut buf = [0; WIDTH * HEIGHT];
     let mut u = Vector { x: 1 << Q, y: 0 };
-    let v = Vector {
-        x: 254 << (Q - 8),
-        y: 3 << (Q - 8),
-    };
+    let v = Vector { x: 16374, y: 257 };
     let rz = RotateZoom::new(WIDTH as i32, HEIGHT as i32);
-    for frame in 0..600 {
+    for frame in 0..1800 {
         fill_slice(&mut buf, WIDTH, rz * u);
         u = u * v;
         image::GrayImage::from_fn(WIDTH as u32, HEIGHT as u32, |x, y| {
