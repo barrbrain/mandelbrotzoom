@@ -2,6 +2,7 @@
 //
 // This source code is subject to the terms of the BSD 2 Clause License.
 
+use v_frame::plane::Plane;
 use v_frame::prelude::*;
 
 const Q: i32 = 14;
@@ -76,14 +77,21 @@ impl std::ops::Mul<Vector> for RotateZoom {
     }
 }
 
-fn fill_slice<T: pixel>(p: &mut [T], stride: usize, rz: RotateZoom, bit_depth: usize)
-{
-    for (y, row) in p.chunks_mut(stride).enumerate() {
-        for (x, v) in row.iter_mut().enumerate() {
-            let r = ((x as i32 * rz.col_step.x + y as i32 * rz.row_step.x) >> P) + rz.origin.x;
-            let i = ((x as i32 * rz.col_step.y + y as i32 * rz.row_step.y) >> P) + rz.origin.y;
-            *v = T::cast_from(mandelbrot_pixel(r, i) >> (12 - bit_depth));
-        }
+fn fill_slice<T: Pixel>(row: &mut [T], y: usize, rz: RotateZoom, bit_depth: usize) {
+    for (x, v) in row.iter_mut().enumerate() {
+        let r = ((x as i32 * rz.col_step.x + y as i32 * rz.row_step.x) >> P) + rz.origin.x;
+        let i = ((x as i32 * rz.col_step.y + y as i32 * rz.row_step.y) >> P) + rz.origin.y;
+        *v = T::cast_from(mandelbrot_pixel(r, i) >> (12 - bit_depth));
+    }
+}
+
+fn fill_plane<T: Pixel>(plane: &mut Plane<T>, rz: RotateZoom, bit_depth: usize) {
+    for (y, mut row) in plane
+        .mut_slice(Default::default())
+        .rows_iter_mut()
+        .enumerate()
+    {
+        fill_slice(&mut row, y, rz, bit_depth);
     }
 }
 
@@ -109,15 +117,15 @@ impl RotateZoom {
 fn main() {
     const WIDTH: usize = 1920;
     const HEIGHT: usize = 1080;
-    let mut buf = [0; WIDTH * HEIGHT];
+    let mut plane = Plane::<u8>::new(WIDTH, HEIGHT, 0, 0, 0, 0);
     let mut u = Vector { x: 1 << Q, y: 0 };
     let v = Vector { x: 16374, y: 257 };
     let rz = RotateZoom::new(WIDTH as i32, HEIGHT as i32);
     for frame in 0..1800 {
-        fill_slice(&mut buf, WIDTH, rz * u, 8);
+        fill_plane(&mut plane, rz * u, 8);
         u = u * v;
         image::GrayImage::from_fn(WIDTH as u32, HEIGHT as u32, |x, y| {
-            image::Luma([buf[(y * (WIDTH as u32) + x) as usize]])
+            image::Luma([plane.p(x as usize, y as usize)])
         })
         .save(format!("mandelbrot-{:03}.png", frame))
         .unwrap();
