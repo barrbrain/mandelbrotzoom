@@ -2,6 +2,8 @@
 //
 // This source code is subject to the terms of the BSD 2 Clause License.
 
+use v_frame::prelude::*;
+
 const Q: i32 = 14;
 const P: i32 = 8;
 
@@ -74,12 +76,13 @@ impl std::ops::Mul<Vector> for RotateZoom {
     }
 }
 
-fn fill_slice(p: &mut [u8], stride: usize, rz: RotateZoom) {
+fn fill_slice<T: pixel>(p: &mut [T], stride: usize, rz: RotateZoom, bit_depth: usize)
+{
     for (y, row) in p.chunks_mut(stride).enumerate() {
         for (x, v) in row.iter_mut().enumerate() {
             let r = ((x as i32 * rz.col_step.x + y as i32 * rz.row_step.x) >> P) + rz.origin.x;
             let i = ((x as i32 * rz.col_step.y + y as i32 * rz.row_step.y) >> P) + rz.origin.y;
-            *v = (mandelbrot_pixel(r, i) >> 4) as u8;
+            *v = T::cast_from(mandelbrot_pixel(r, i) >> (12 - bit_depth));
         }
     }
 }
@@ -111,7 +114,7 @@ fn main() {
     let v = Vector { x: 16374, y: 257 };
     let rz = RotateZoom::new(WIDTH as i32, HEIGHT as i32);
     for frame in 0..1800 {
-        fill_slice(&mut buf, WIDTH, rz * u);
+        fill_slice(&mut buf, WIDTH, rz * u, 8);
         u = u * v;
         image::GrayImage::from_fn(WIDTH as u32, HEIGHT as u32, |x, y| {
             image::Luma([buf[(y * (WIDTH as u32) + x) as usize]])
