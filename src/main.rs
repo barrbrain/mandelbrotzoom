@@ -5,13 +5,13 @@
 const Q: i32 = 14;
 const P: i32 = 8;
 
-fn mandelbrot_pixel(r: i32, i: i32) -> u8 {
+fn mandelbrot_pixel(r: i32, i: i32) -> u16 {
     let mut z_r = 0i32;
     let mut z_i = 0i32;
     let mut z_rr = z_r * z_r;
     let mut z_ii = z_i * z_i;
-    let low_bits = mix(r, i) & 3;
-    for p in (4..=252).rev().step_by(4) {
+    let low_bits = mix(r, i) & 63;
+    for p in (1..=63).rev() {
         let z2_r = (z_rr - z_ii) >> Q;
         let z2_i = (z_r * z_i) >> (Q - 1);
         z_r = z2_r + r;
@@ -25,14 +25,14 @@ fn mandelbrot_pixel(r: i32, i: i32) -> u8 {
                 }
             }
         }
-        return p | low_bits;
+        return (p << 6) | low_bits;
     }
     low_bits
 }
 
-fn mix(x: i32, y: i32) -> u8 {
+fn mix(x: i32, y: i32) -> u16 {
     let h = x ^ (y >> 4) ^ (y << 4);
-    (h ^ (h >> 7) ^ (h >> 4)) as u8
+    (h ^ (h >> 7) ^ (h >> 4)) as u16
 }
 
 #[derive(Copy, Clone)]
@@ -79,7 +79,7 @@ fn fill_slice(p: &mut [u8], stride: usize, rz: RotateZoom) {
         for (x, v) in row.iter_mut().enumerate() {
             let r = ((x as i32 * rz.col_step.x + y as i32 * rz.row_step.x) >> P) + rz.origin.x;
             let i = ((x as i32 * rz.col_step.y + y as i32 * rz.row_step.y) >> P) + rz.origin.y;
-            *v = mandelbrot_pixel(r, i);
+            *v = (mandelbrot_pixel(r, i) >> 4) as u8;
         }
     }
 }
