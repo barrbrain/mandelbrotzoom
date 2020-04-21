@@ -40,7 +40,7 @@ fn mix(x: i32, y: i32) -> u16 {
 }
 
 #[derive(Copy, Clone)]
-struct Vector {
+pub struct Vector {
     x: i32,
     y: i32,
 }
@@ -60,8 +60,41 @@ impl std::ops::Mul<Vector> for Vector {
     }
 }
 
+impl Default for Vector {
+    fn default() -> Self {
+        Vector { x: 1 << Q, y: 0 }
+    }
+}
+
+impl Vector {
+    pub fn new(x: i32, y: i32, shift: usize) -> Self {
+        assert!(shift <= Q as usize);
+        Vector {
+            x: x << (Q as usize - shift),
+            y: y << (Q as usize - shift),
+        }
+    }
+
+    pub fn pow(self, mut exponent: usize) -> Self {
+        let mut product = if (exponent & 1) == 1 {
+            self
+        } else {
+            Vector::default()
+        };
+        let mut factor = self;
+        while exponent > 1 {
+            exponent /= 2;
+            factor = factor * factor;
+            if (exponent & 1) == 1 {
+                product = product * factor;
+            }
+        }
+        product
+    }
+}
+
 #[derive(Copy, Clone)]
-struct RotateZoom {
+pub struct RotateZoom {
     origin: Vector,
     col_step: Vector,
     row_step: Vector,
@@ -96,7 +129,7 @@ fn fill_plane<T: Pixel>(plane: &mut Plane<T>, rz: RotateZoom, bit_depth: usize) 
     }
 }
 
-fn fill_frame<T: Pixel>(frame: &mut Frame<T>, rz: RotateZoom, bit_depth: usize) {
+pub fn fill_frame<T: Pixel>(frame: &mut Frame<T>, rz: RotateZoom, bit_depth: usize) {
     for mut plane in frame.planes.iter_mut() {
         let xdec = plane.cfg.xdec;
         let ydec = plane.cfg.ydec;
@@ -116,7 +149,9 @@ fn fill_frame<T: Pixel>(frame: &mut Frame<T>, rz: RotateZoom, bit_depth: usize) 
 }
 
 impl RotateZoom {
-    fn new(width: i32, height: i32) -> Self {
+    pub fn new(width: usize, height: usize) -> Self {
+        let width = width as i32;
+        let height = height as i32;
         Self {
             origin: Vector {
                 x: -(1 << (Q + 1)),
@@ -161,12 +196,10 @@ fn main() {
     const WIDTH: usize = 1920;
     const HEIGHT: usize = 1080;
     let mut frame = Frame::<u8>::new_with_padding(WIDTH, HEIGHT, ChromaSampling::Cs420, 0);
-    let mut u = Vector { x: 1 << Q, y: 0 };
-    let v = Vector { x: 16374, y: 257 };
-    let rz = RotateZoom::new(WIDTH as i32, HEIGHT as i32);
+    let v = Vector::new(16374, 257, 14);
+    let rz = RotateZoom::new(WIDTH, HEIGHT);
     for frame_number in 0..1800 {
-        fill_frame(&mut frame, rz * u, 8);
-        u = u * v;
+        fill_frame(&mut frame, rz * v.pow(frame_number), 8);
         let xdec = frame.planes[1].cfg.xdec;
         let ydec = frame.planes[1].cfg.ydec;
         image::RgbImage::from_fn(WIDTH as u32, HEIGHT as u32, |x, y| {
