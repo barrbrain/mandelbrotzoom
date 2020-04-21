@@ -2,6 +2,7 @@
 //
 // This source code is subject to the terms of the BSD 2 Clause License.
 
+use v_frame::frame::Frame;
 use v_frame::plane::Plane;
 use v_frame::prelude::*;
 
@@ -95,6 +96,25 @@ fn fill_plane<T: Pixel>(plane: &mut Plane<T>, rz: RotateZoom, bit_depth: usize) 
     }
 }
 
+fn fill_frame<T: Pixel>(frame: &mut Frame<T>, rz: RotateZoom, bit_depth: usize) {
+    for mut plane in frame.planes.iter_mut() {
+        let xdec = plane.cfg.xdec;
+        let ydec = plane.cfg.ydec;
+        let rz = RotateZoom {
+            origin: rz.origin,
+            col_step: Vector {
+                x: rz.col_step.x << xdec,
+                y: rz.col_step.y << ydec,
+            },
+            row_step: Vector {
+                x: rz.row_step.x << xdec,
+                y: rz.row_step.y << ydec,
+            },
+        };
+        fill_plane(&mut plane, rz, bit_depth);
+    }
+}
+
 impl RotateZoom {
     fn new(width: i32, height: i32) -> Self {
         Self {
@@ -117,18 +137,18 @@ impl RotateZoom {
 fn main() {
     const WIDTH: usize = 1920;
     const HEIGHT: usize = 1080;
-    let mut plane = Plane::<u8>::new(WIDTH, HEIGHT, 0, 0, 0, 0);
+    let mut frame = Frame::<u8>::new_with_padding(WIDTH, HEIGHT, ChromaSampling::Cs420, 0);
     let mut u = Vector { x: 1 << Q, y: 0 };
     let v = Vector { x: 16374, y: 257 };
     let rz = RotateZoom::new(WIDTH as i32, HEIGHT as i32);
-    for frame in 0..1800 {
-        fill_plane(&mut plane, rz * u, 8);
+    for frame_number in 0..1800 {
+        fill_frame(&mut frame, rz * u, 8);
         u = u * v;
         image::GrayImage::from_fn(WIDTH as u32, HEIGHT as u32, |x, y| {
-            image::Luma([plane.p(x as usize, y as usize)])
+            image::Luma([frame.planes[0].p(x as usize, y as usize)])
         })
-        .save(format!("mandelbrot-{:03}.png", frame))
+        .save(format!("mandelbrot-{:03}.png", frame_number))
         .unwrap();
-        println!("Frame {}", frame);
+        println!("Frame {}", frame_number);
     }
 }
