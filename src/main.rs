@@ -134,6 +134,29 @@ impl RotateZoom {
     }
 }
 
+#[allow(clippy::many_single_char_names)]
+fn bt709_to_rgb<T: Pixel>(yuv: (T, T, T), bit_depth: usize) -> [T; 3] {
+    const SHIFT: usize = 14;
+    let y_den = 219 << (bit_depth - 8);
+    let y_off = 16 << (bit_depth - 8);
+    let uv_den = 224 << (bit_depth - 8);
+    let uv_off = 128 << (bit_depth - 8);
+
+    let y = (((i32::cast_from(yuv.0) - y_off) << SHIFT) + (y_den >> 1)) / y_den;
+    let u = (((i32::cast_from(yuv.1) - uv_off) << SHIFT) + (uv_den >> 1)) / uv_den;
+    let v = (((i32::cast_from(yuv.2) - uv_off) << SHIFT) + (uv_den >> 1)) / uv_den;
+
+    let r = round_shift(y + ((20976 * v) >> SHIFT), SHIFT - bit_depth);
+    let g = round_shift(y - ((3520 * u + 6236 * v) >> SHIFT), SHIFT - bit_depth);
+    let b = round_shift(y + ((34865 * u) >> SHIFT), SHIFT - bit_depth);
+
+    let r = r.min((1 << bit_depth) - 1).max(0);
+    let g = g.min((1 << bit_depth) - 1).max(0);
+    let b = b.min((1 << bit_depth) - 1).max(0);
+
+    [T::cast_from(r), T::cast_from(g), T::cast_from(b)]
+}
+
 fn main() {
     const WIDTH: usize = 1920;
     const HEIGHT: usize = 1080;
@@ -144,8 +167,17 @@ fn main() {
     for frame_number in 0..1800 {
         fill_frame(&mut frame, rz * u, 8);
         u = u * v;
-        image::GrayImage::from_fn(WIDTH as u32, HEIGHT as u32, |x, y| {
-            image::Luma([frame.planes[0].p(x as usize, y as usize)])
+        let xdec = frame.planes[1].cfg.xdec;
+        let ydec = frame.planes[1].cfg.ydec;
+        image::RgbImage::from_fn(WIDTH as u32, HEIGHT as u32, |x, y| {
+            image::Rgb(bt709_to_rgb(
+                (
+                    frame.planes[0].p(x as usize, y as usize),
+                    frame.planes[1].p(x as usize >> xdec, y as usize >> ydec),
+                    frame.planes[2].p(x as usize >> xdec, y as usize >> ydec),
+                ),
+                8,
+            ))
         })
         .save(format!("mandelbrot-{:03}.png", frame_number))
         .unwrap();
