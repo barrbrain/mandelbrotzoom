@@ -205,14 +205,16 @@ struct Opts {
     output_dir: PathBuf,
 }
 
+use rayon::prelude::*;
+
 fn main() {
     let o = Opts::from_args();
 
-    let mut frame = Frame::<u8>::new_with_padding(o.width, o.height, ChromaSampling::Cs420, 0);
     let v = Vector::new(16374, 257, 14);
     let rz = RotateZoom::new(o.width, o.height);
 
-    for frame_number in 0..1800 {
+    (0usize..1800).into_par_iter().for_each(|frame_number| {
+        let mut frame = Frame::<u8>::new_with_padding(o.width, o.height, ChromaSampling::Cs420, 0);
         fill_frame(&mut frame, rz * v.pow(frame_number), 8);
         let xdec = frame.planes[1].cfg.xdec;
         let ydec = frame.planes[1].cfg.ydec;
@@ -232,5 +234,5 @@ fn main() {
         )
         .unwrap();
         println!("Frame {}", frame_number);
-    }
+    });
 }
