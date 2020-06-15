@@ -120,13 +120,15 @@ fn fill_slice<T: Pixel>(row: &mut [T], y: usize, rz: RotateZoom, bit_depth: usiz
 }
 
 fn fill_plane<T: Pixel>(plane: &mut Plane<T>, rz: RotateZoom, bit_depth: usize) {
-    for (y, mut row) in plane
+    plane
         .mut_slice(Default::default())
         .rows_iter_mut()
         .enumerate()
-    {
-        fill_slice(&mut row, y, rz, bit_depth);
-    }
+        .collect::<Vec<_>>()
+        .into_par_iter()
+        .for_each(|(y, mut row)| {
+            fill_slice(&mut row, y, rz, bit_depth);
+        });
 }
 
 pub fn fill_frame<T: Pixel>(frame: &mut Frame<T>, rz: RotateZoom, bit_depth: usize) {
@@ -192,28 +194,176 @@ fn bt709_to_rgb<T: Pixel>(yuv: (T, T, T), bit_depth: usize) -> [T; 3] {
     [T::cast_from(r), T::cast_from(g), T::cast_from(b)]
 }
 
-fn main() {
-    const WIDTH: usize = 1920;
-    const HEIGHT: usize = 1080;
-    let mut frame = Frame::<u8>::new_with_padding(WIDTH, HEIGHT, ChromaSampling::Cs420, 0);
-    let v = Vector::new(16374, 257, 14);
-    let rz = RotateZoom::new(WIDTH, HEIGHT);
-    for frame_number in 0..1800 {
-        fill_frame(&mut frame, rz * v.pow(frame_number), 8);
-        let xdec = frame.planes[1].cfg.xdec;
-        let ydec = frame.planes[1].cfg.ydec;
-        image::RgbImage::from_fn(WIDTH as u32, HEIGHT as u32, |x, y| {
-            image::Rgb(bt709_to_rgb(
-                (
-                    frame.planes[0].p(x as usize, y as usize),
-                    frame.planes[1].p(x as usize >> xdec, y as usize >> ydec),
-                    frame.planes[2].p(x as usize >> xdec, y as usize >> ydec),
-                ),
-                8,
-            ))
-        })
-        .save(format!("mandelbrot-{:03}.png", frame_number))
-        .unwrap();
-        println!("Frame {}", frame_number);
+use std::path::PathBuf;
+use structopt::StructOpt;
+
+fn parse_chroma_sampling(s: &str) -> Result<ChromaSampling, String> {
+    match s {
+        "4:2:0" => Ok(ChromaSampling::Cs420),
+        "4:2:2" => Ok(ChromaSampling::Cs422),
+        "4:4:4" => Ok(ChromaSampling::Cs444),
+        other => Err(format!("Unsupported Chroma Sampling {}", other)),
     }
+}
+
+fn parse_bit_depth(s: &str) -> Result<usize, String> {
+    use std::str::FromStr;
+
+    let v = usize::from_str(s).map_err(|e| e.to_string())?;
+
+    if v != 8 && v != 10 && v != 12 {
+        Err(format!("Unsupported bit_depth {}", v))
+    } else {
+        Ok(v)
+    }
+}
+
+#[derive(Debug, StructOpt)]
+struct Opts {
+    #[structopt(short, long, default_value = "1920")]
+    width: usize,
+    #[structopt(short, long, default_value = "1080")]
+    height: usize,
+    #[structopt(short, long, default_value = "mandelbrot.y4m", parse(from_os_str))]
+    output: PathBuf,
+    #[structopt(short, long, default_value = "1800")]
+    frames: usize,
+    #[structopt(short, long, default_value = "4:2:0", parse(try_from_str = parse_chroma_sampling))]
+    chroma_sampling: ChromaSampling,
+    // #[structopt(short, long, default_value = "8", parse(try_from_str = parse_bit_depth))]
+    // bit_depth: usize,
+    #[structopt(long, default_value = "60")]
+    fps: usize,
+}
+
+use rayon::prelude::*;
+use std::io::Write;
+
+fn write_y4m_frame<T: Pixel, W: Write>(y4m_enc: &mut y4m::Encoder<W>, rec: &Frame<T>, o: &Opts) {
+    use std::slice;
+
+    let bit_depth = 8;
+
+    let planes = if o.chroma_sampling == ChromaSampling::Cs400 {
+        1
+    } else {
+        3
+    };
+    let bytes_per_sample = if bit_depth > 8 { 2 } else { 1 };
+    let (chroma_width, chroma_height) = o.chroma_sampling.get_chroma_dimensions(o.width, o.height);
+    let pitch_y = o.width * bytes_per_sample;
+    let pitch_uv = chroma_width * bytes_per_sample;
+
+    let (mut rec_y, mut rec_u, mut rec_v) = (
+        vec![128u8; pitch_y * o.height],
+        vec![128u8; pitch_uv * chroma_height],
+        vec![128u8; pitch_uv * chroma_height],
+    );
+
+    let (stride_y, stride_u, stride_v) = (
+        rec.planes[0].cfg.stride,
+        rec.planes[1].cfg.stride,
+        rec.planes[2].cfg.stride,
+    );
+
+    for (line, line_out) in rec.planes[0]
+        .data_origin()
+        .chunks(stride_y)
+        .zip(rec_y.chunks_mut(pitch_y))
+    {
+        if bit_depth > 8 {
+            unsafe {
+                line_out.copy_from_slice(slice::from_raw_parts::<u8>(
+                    line.as_ptr() as *const u8,
+                    pitch_y,
+                ));
+            }
+        } else {
+            line_out.copy_from_slice(
+                &line.iter().map(|&v| u8::cast_from(v)).collect::<Vec<u8>>()[..pitch_y],
+            );
+        }
+    }
+
+    if planes > 1 {
+        for (line, line_out) in rec.planes[1]
+            .data_origin()
+            .chunks(stride_u)
+            .zip(rec_u.chunks_mut(pitch_uv))
+        {
+            if bit_depth > 8 {
+                unsafe {
+                    line_out.copy_from_slice(slice::from_raw_parts::<u8>(
+                        line.as_ptr() as *const u8,
+                        pitch_uv,
+                    ));
+                }
+            } else {
+                line_out.copy_from_slice(
+                    &line.iter().map(|&v| u8::cast_from(v)).collect::<Vec<u8>>()[..pitch_uv],
+                );
+            }
+        }
+        for (line, line_out) in rec.planes[2]
+            .data_origin()
+            .chunks(stride_v)
+            .zip(rec_v.chunks_mut(pitch_uv))
+        {
+            if bit_depth > 8 {
+                unsafe {
+                    line_out.copy_from_slice(slice::from_raw_parts::<u8>(
+                        line.as_ptr() as *const u8,
+                        pitch_uv,
+                    ));
+                }
+            } else {
+                line_out.copy_from_slice(
+                    &line.iter().map(|&v| u8::cast_from(v)).collect::<Vec<u8>>()[..pitch_uv],
+                );
+            }
+        }
+    }
+
+    let rec_frame = y4m::Frame::new([&rec_y, &rec_u, &rec_v], None);
+    y4m_enc.write_frame(&rec_frame).unwrap();
+}
+
+use anyhow::Result;
+
+fn main() -> Result<()> {
+    let o = Opts::from_args();
+
+    let v = Vector::new(16374, 257, 14);
+    let rz = RotateZoom::new(o.width, o.height);
+
+    let bit_depth = 8;
+
+    let csp = match (o.chroma_sampling, bit_depth) {
+        (ChromaSampling::Cs420, 8) => y4m::Colorspace::C420,
+        (ChromaSampling::Cs420, 10) => y4m::Colorspace::C420p10,
+        (ChromaSampling::Cs420, 12) => y4m::Colorspace::C420p12,
+        (ChromaSampling::Cs422, 8) => y4m::Colorspace::C422,
+        (ChromaSampling::Cs422, 10) => y4m::Colorspace::C422p10,
+        (ChromaSampling::Cs422, 12) => y4m::Colorspace::C422p12,
+        (ChromaSampling::Cs444, 8) => y4m::Colorspace::C444,
+        (ChromaSampling::Cs444, 10) => y4m::Colorspace::C444p10,
+        (ChromaSampling::Cs444, 12) => y4m::Colorspace::C444p12,
+        _ => unreachable!(),
+    };
+
+    let out = std::fs::File::create(&o.output)?;
+
+    let mut y4m_enc = y4m::encode(o.width, o.height, y4m::Ratio::new(o.fps, 1))
+        .with_colorspace(csp)
+        .write_header(out)
+        .unwrap();
+    let mut frame = Frame::<u8>::new_with_padding(o.width, o.height, ChromaSampling::Cs420, 0);
+
+    (0..o.frames).for_each(|frame_number| {
+        fill_frame(&mut frame, rz * v.pow(frame_number), 8);
+
+        write_y4m_frame(&mut y4m_enc, &frame, &o);
+    });
+
+    Ok(())
 }
