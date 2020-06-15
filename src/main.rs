@@ -192,17 +192,31 @@ fn bt709_to_rgb<T: Pixel>(yuv: (T, T, T), bit_depth: usize) -> [T; 3] {
     [T::cast_from(r), T::cast_from(g), T::cast_from(b)]
 }
 
+use std::path::PathBuf;
+use structopt::StructOpt;
+
+#[derive(Debug, StructOpt)]
+struct Opts {
+    #[structopt(short, long, default_value = "1920")]
+    width: usize,
+    #[structopt(short, long, default_value = "1080")]
+    height: usize,
+    #[structopt(short, long, default_value = ".", parse(from_os_str))]
+    output_dir: PathBuf,
+}
+
 fn main() {
-    const WIDTH: usize = 1920;
-    const HEIGHT: usize = 1080;
-    let mut frame = Frame::<u8>::new_with_padding(WIDTH, HEIGHT, ChromaSampling::Cs420, 0);
+    let o = Opts::from_args();
+
+    let mut frame = Frame::<u8>::new_with_padding(o.width, o.height, ChromaSampling::Cs420, 0);
     let v = Vector::new(16374, 257, 14);
-    let rz = RotateZoom::new(WIDTH, HEIGHT);
+    let rz = RotateZoom::new(o.width, o.height);
+
     for frame_number in 0..1800 {
         fill_frame(&mut frame, rz * v.pow(frame_number), 8);
         let xdec = frame.planes[1].cfg.xdec;
         let ydec = frame.planes[1].cfg.ydec;
-        image::RgbImage::from_fn(WIDTH as u32, HEIGHT as u32, |x, y| {
+        image::RgbImage::from_fn(o.width as u32, o.height as u32, |x, y| {
             image::Rgb(bt709_to_rgb(
                 (
                     frame.planes[0].p(x as usize, y as usize),
@@ -212,7 +226,10 @@ fn main() {
                 8,
             ))
         })
-        .save(format!("mandelbrot-{:03}.png", frame_number))
+        .save(
+            o.output_dir
+                .join(format!("mandelbrot-{:03}.png", frame_number)),
+        )
         .unwrap();
         println!("Frame {}", frame_number);
     }
