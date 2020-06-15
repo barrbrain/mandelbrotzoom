@@ -203,6 +203,8 @@ struct Opts {
     height: usize,
     #[structopt(short, long, default_value = ".", parse(from_os_str))]
     output_dir: PathBuf,
+    #[structopt(short, long, default_value = "1800")]
+    frames: usize,
 }
 
 use rayon::prelude::*;
@@ -213,7 +215,7 @@ fn main() {
     let v = Vector::new(16374, 257, 14);
     let rz = RotateZoom::new(o.width, o.height);
 
-    (0usize..1800).into_par_iter().for_each(|frame_number| {
+    (0..o.frames).into_par_iter().for_each(|frame_number| {
         let mut frame = Frame::<u8>::new_with_padding(o.width, o.height, ChromaSampling::Cs420, 0);
         fill_frame(&mut frame, rz * v.pow(frame_number), 8);
         let xdec = frame.planes[1].cfg.xdec;
